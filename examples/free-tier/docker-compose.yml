@@ -12,41 +12,25 @@ services:
     entrypoint: ["python3", "examples/free-tier/demo.py"]
     command: ["--list"]
 
-  ollama:
-    image: ollama/ollama:latest
-    profiles: ["local"]
-    volumes:
-      - ollama_data:/root/.ollama
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-
-  ollama-pull:
-    image: ollama/ollama:latest
-    profiles: ["local"]
-    depends_on:
-      ollama:
-        condition: service_healthy
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi:2.7b}
-    entrypoint: ["/bin/sh", "-c", "ollama pull \"$$OLLAMA_MODEL\""]
-
   demo-local:
     image: python:3.12-slim
     profiles: ["local"]
     working_dir: /workspace
     volumes:
       - ../..:/workspace:ro
-    depends_on:
-      ollama-pull:
-        condition: service_completed_successfully
-    environment:
-      LLMDAP_OVERRIDE_CHAT_LOCAL: '{"endpoint":"http://ollama:11434","dialect":"ollama","model":"${OLLAMA_MODEL:-phi:2.7b}","auth":{"method":"none"},"governance":{"data_classification":"restricted","zero_data_retention":true,"region":"on-prem"}}'
-    entrypoint: ["python3", "examples/free-tier/demo.py"]
-    command: ["-s", "chat-local", "In one sentence, what problem does LDAP solve?"]
+    models:
+      chat:
+        endpoint_var: DMR_URL
+        model_var: DMR_MODEL
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        export LLMDAP_OVERRIDE_CHAT_LOCAL="$$(python3 -c 'import json,os; print(json.dumps({"endpoint":os.environ["DMR_URL"],"dialect":"openai-chat","model":os.environ["DMR_MODEL"],"auth":{"method":"none"},"governance":{"data_classification":"restricted","zero_data_retention":true,"region":"on-prem"}}))')"
+        exec python3 examples/free-tier/demo.py -s chat-local "$$@"
+      - --
+    command: ["In one sentence, what problem does LDAP solve?"]
 
-volumes:
-  ollama_data:
+models:
+  chat:
+    model: ai/smollm2
