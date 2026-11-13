@@ -6,7 +6,7 @@ import urllib.request
 from pathlib import Path
 from typing import List, Optional
 
-from .client import CLASSIFICATION_ORDER, LLMDAPClient, LLMDAPError
+from .client import CLASSIFICATION_ORDER, LLMDAPClient, LLMDAPError, file_uri_to_path
 
 VALID_DIALECTS = {
     "openai-chat",
@@ -39,7 +39,7 @@ def _load_json_target(target: str) -> dict:
         with urllib.request.urlopen(target, timeout=5) as resp:
             return json.loads(resp.read().decode("utf-8"))
     if target.startswith("file://"):
-        path = Path(urllib.request.url2pathname(target[7:])).expanduser()
+        path = file_uri_to_path(target)
     else:
         path = Path(target).expanduser()
     return json.loads(path.read_text(encoding="utf-8"))

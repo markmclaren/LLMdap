@@ -14,6 +14,14 @@ CLASSIFICATION_ORDER = {
 }
 
 
+def file_uri_to_path(uri: str) -> Path:
+    """Convert a file:// URI to a Path, honouring the README's file:///~/... form."""
+    raw = urllib.request.url2pathname(uri[len("file://"):])
+    if raw.startswith("/~"):
+        raw = raw[1:]  # "/~/.config/..." -> "~/.config/..." so expanduser() works
+    return Path(raw).expanduser()
+
+
 class LLMDAPError(Exception):
     """Raised when an LLMDAP lookup, governance policy, or credential exchange fails."""
 
@@ -54,7 +62,7 @@ class LLMDAPClient:
                 return data
 
         if url.startswith("file://"):
-            path = Path(urllib.request.url2pathname(url[7:])).expanduser()
+            path = file_uri_to_path(url)
             data = json.loads(path.read_text(encoding="utf-8"))
         else:
             with urllib.request.urlopen(url, timeout=5) as resp:

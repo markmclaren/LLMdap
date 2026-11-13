@@ -1,0 +1,65 @@
+{
+  "llmdap_version": "0.1",
+  "directory": "free-tier-demo",
+  "records": {
+    "chat-local": {
+      "ttl": 300,
+      "endpoint": "http://localhost:11434",
+      "dialect": "ollama",
+      "model": "llama3.2:3b",
+      "auth": { "method": "none" },
+      "governance": {
+        "data_classification": "restricted",
+        "zero_data_retention": true,
+        "region": "on-prem"
+      },
+      "capabilities": { "context_window": 131072 }
+    },
+    "chat-github": {
+      "ttl": 3600,
+      "endpoint": "https://models.github.ai/inference",
+      "dialect": "openai-chat",
+      "model": "openai/gpt-4.1-mini",
+      "auth": { "method": "env", "locator": "GITHUB_TOKEN" },
+      "governance": {
+        "data_classification": "public",
+        "zero_data_retention": false
+      },
+      "capabilities": { "supports_tools": true, "supports_vision": true }
+    },
+    "chat-gemini": {
+      "ttl": 3600,
+      "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "dialect": "openai-chat",
+      "model": "gemini-2.5-flash",
+      "auth": { "method": "env", "locator": "GEMINI_API_KEY" },
+      "governance": {
+        "data_classification": "public",
+        "zero_data_retention": false
+      },
+      "capabilities": { "context_window": 1048576, "supports_tools": true }
+    },
+    "chat-groq": {
+      "ttl": 3600,
+      "endpoint": "https://api.groq.com/openai/v1",
+      "dialect": "openai-chat",
+      "model": "openai/gpt-oss-20b",
+      "auth": { "method": "env", "locator": "GROQ_API_KEY" },
+      "governance": {
+        "data_classification": "public",
+        "zero_data_retention": false
+      },
+      "capabilities": { "context_window": 131072, "supports_tools": true }
+    },
+    "reasoning-premium": {
+      "endpoint": "https://api.anthropic.com/v1",
+      "dialect": "anthropic-messages",
+      "model": "claude-sonnet-4-6",
+      "auth": {
+        "method": "portal-request",
+        "locator": "https://console.anthropic.com/"
+      },
+      "governance": { "data_classification": "internal" }
+    }
+  }
+}
