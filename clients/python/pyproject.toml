@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "llmdap"
+version = "0.1.0"
+description = "Lightweight Language Model Directory Access Protocol (LLMDAP) reference client"
+readme = "../../README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "LLMDAP Contributors" }
+]
+keywords = ["llm", "service-discovery", "ldap", "jndi", "oidc", "ai-infrastructure"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Systems Administration :: Authentication/Directory",
+]
+
+# Core client uses strictly Python stdlib (urllib, json, os, time)
+dependencies = []
+
+[project.optional-dependencies]
+dns = ["dnspython>=2.6.0"]
+ldap = ["ldap3>=2.9.1"]
+dev = ["pytest>=8.0.0", "jsonschema>=4.23.0"]
+
+[project.scripts]
+llmdap = "llmdap.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llmdap"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
