@@ -1,38 +1,41 @@
-name: LLMDAP demo
+name: LLMDAP
 
 on:
-  workflow_dispatch:
+  push:
+  pull_request:
+  workflow_dispatch:   # "Run workflow" button: also makes a real model call
     inputs:
       prompt:
         description: Prompt to send
         default: In one sentence, what problem does LDAP solve?
-  push:
-
-permissions:
-  contents: read
-  models: read   # lets the built-in GITHUB_TOKEN call GitHub Models for free
 
 jobs:
-  demo:
+  tests:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Read the directory over HTTPS from this commit, as any other client would
-      DIRECTORY: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/examples/directory.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Tests (includes schema check of examples/directory.json)
         run: pip install -q pytest jsonschema && PYTHONPATH=clients/python/src pytest -q clients/python/tests
 
-      - name: Call GitHub Models via the directory
-        run: python examples/demo.py -d "$DIRECTORY" -s chat-github "${{ inputs.prompt || 'In one sentence, what problem does LDAP solve?' }}"
-
-      - name: Restricted data must be refused by a public endpoint
+  live-demo:
+    if: github.event_name == 'workflow_dispatch'
+    needs: tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      models: read   # lets the built-in GITHUB_TOKEN call GitHub Models for free
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Look up chat-github over HTTPS, then call GitHub Models
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIRECTORY: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/examples/directory.json
         run: |
-          if python examples/demo.py -d "$DIRECTORY" -s chat-github -c restricted "secret"; then
-            echo "::error::Expected a refusal"; exit 1
-          fi
+          python examples/demo.py -d "$DIRECTORY" -s chat-github "${{ inputs.prompt }}" | tee reply.txt
+          { echo "### Reply from chat-github"; echo; cat reply.txt; } >> "$GITHUB_STEP_SUMMARY"

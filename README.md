@@ -47,8 +47,11 @@ works. Its directory is [`examples/directory.json`](examples/directory.json):
 
 No secrets are stored: `auth` only says *where* the key comes from.
 
-The GitHub Action in this repo runs the same demo for real on every push,
-using the workflow's own token, so it needs no setup.
+To see it work without setting anything up, open the repo's **Actions** tab,
+choose **LLMDAP**, and press **Run workflow**. It looks up `chat-github` from
+the directory over HTTPS and calls GitHub Models using the workflow's own
+token; the reply appears on the run's summary page. (Every push also runs the
+tests, but those make no model calls.)
 
 ## Use it in your code
 
