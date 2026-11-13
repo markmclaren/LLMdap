@@ -36,6 +36,21 @@ python examples/free-tier/demo.py -c restricted "Patient notes..."   # only chat
 Without `-s`, the demo walks `chat-local → chat-github → chat-gemini → chat-groq`
 and uses the first one whose credential resolves and whose endpoint answers.
 
+## Run with Docker Compose
+
+Copy `.env.example` to `.env`, add one or more free-tier API keys, and run the
+zero-install container:
+
+```bash
+cd examples/free-tier
+cp .env.example .env
+# Edit .env to add GITHUB_TOKEN, GEMINI_API_KEY, and/or GROQ_API_KEY
+
+docker compose run --rm demo --list
+docker compose run --rm demo "Explain LDAP in one sentence"
+docker compose run --rm demo -s chat-gemini "Hello"
+```
+
 ## Things to try
 
 **Swap a model without touching code.** Put a personal override in

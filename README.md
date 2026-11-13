@@ -44,6 +44,31 @@ In enterprise infrastructure, applications don't hardcode database IPs or creden
 
 ---
 
+## Try It Now (Free-Tier Quickstart)
+
+You can run a working, zero-install demo right from the repo using free-tier endpoints (local Ollama, GitHub Models, Google AI Studio, or Groq)—with Python stdlib only:
+
+```bash
+# Option A: fully local with Ollama
+ollama pull llama3.2:3b && ollama serve
+
+# Option B: any one free-tier API key
+export GITHUB_TOKEN=github_pat_...      # or GEMINI_API_KEY / GROQ_API_KEY
+
+# See which logical services resolve on your machine
+python examples/free-tier/demo.py --list
+
+# Run a prompt (automatically picks the first available free-tier backend)
+python examples/free-tier/demo.py "Explain LDAP in one sentence"
+
+# Enforce data governance: only local/restricted-cleared endpoints are allowed
+python examples/free-tier/demo.py -c restricted "Sensitive prompt"
+```
+
+See [`examples/free-tier/README.md`](examples/free-tier/README.md) for all options (including resolving over HTTPS from GitHub and swapping models via `LLMDAP_OVERRIDE_*` without touching code).
+
+---
+
 ## Quickstart Example
 
 ### 1. Define a Directory (`~/.config/llmdap/directory.json` or `/.well-known/llmdap.json`)
@@ -113,7 +138,7 @@ response = client.chat.completions.create(
 * [`SPEC.md`](SPEC.md) — Formal LLMDAP v0.1 protocol specification (record schema, resolution order, auth brokers, DNS-SD & LDAP bindings).
 * [`schema/llmdap-directory.schema.json`](schema/llmdap-directory.schema.json) — JSON Schema (Draft 2020-12) for validating directory documents.
 * [`schema/llmdap.schema`](schema/llmdap.schema) — OpenLDAP `llmdapService` objectClass and attribute definitions.
-* [`examples/`](examples/) — Example `.well-known/llmdap.json` directory and LDIF entries.
+* [`examples/`](examples/) — Example `.well-known/llmdap.json` directory, LDIF entries, and a runnable [`free-tier/`](examples/free-tier/README.md) demo.
 * [`clients/python/`](clients/python/) — Reference zero-dependency Python resolver and CLI.
 
 ## Status & Intent
