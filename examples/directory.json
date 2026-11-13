@@ -1,0 +1,36 @@
+{
+  "llmdap_version": "0.1",
+  "records": {
+    "chat-local": {
+      "endpoint": "http://localhost:11434",
+      "dialect": "ollama",
+      "model": "llama3.2:3b",
+      "auth": { "method": "none" },
+      "classification": "restricted"
+    },
+    "chat-github": {
+      "endpoint": "https://models.github.ai/inference",
+      "dialect": "openai-chat",
+      "model": "openai/gpt-4.1-mini",
+      "auth": { "method": "env", "locator": "GITHUB_TOKEN" },
+      "classification": "public"
+    },
+    "chat-gemini": {
+      "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "dialect": "openai-chat",
+      "model": "gemini-2.5-flash",
+      "auth": { "method": "env", "locator": "GEMINI_API_KEY" },
+      "classification": "public"
+    },
+    "reasoning-premium": {
+      "endpoint": "https://api.anthropic.com/v1",
+      "dialect": "anthropic-messages",
+      "model": "claude-sonnet-4-6",
+      "auth": {
+        "method": "portal-request",
+        "locator": "https://console.anthropic.com/"
+      },
+      "classification": "internal"
+    }
+  }
+}

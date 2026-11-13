@@ -1,134 +1,53 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://llmdap.org/schema/v0.1/directory.json",
   "title": "LLMDAP Directory Document",
-  "description": "Root schema for Lightweight Language Model Directory Access Protocol (LLMDAP) JSON directories.",
   "type": "object",
   "required": ["llmdap_version", "records"],
   "additionalProperties": false,
   "properties": {
-    "llmdap_version": {
-      "type": "string",
-      "const": "0.1"
-    },
-    "directory": {
-      "type": "string",
-      "description": "Logical domain or organizational namespace (e.g., 'example.org')"
-    },
+    "llmdap_version": { "const": "0.1" },
     "records": {
       "type": "object",
-      "description": "Map of logical service names to LLMDAP Service Records",
-      "additionalProperties": {
-        "$ref": "#/$defs/serviceRecord"
-      }
+      "description": "Logical service name -> record",
+      "additionalProperties": { "$ref": "#/$defs/record" }
     }
   },
   "$defs": {
-    "serviceRecord": {
+    "record": {
       "type": "object",
       "required": ["endpoint", "dialect", "model", "auth"],
       "additionalProperties": false,
       "properties": {
-        "ttl": {
-          "type": "integer",
-          "minimum": 0,
-          "default": 3600,
-          "description": "Cache time-to-live in seconds"
-        },
-        "endpoint": {
-          "type": "string",
-          "format": "uri",
-          "description": "Base URL of the inference API"
-        },
+        "endpoint": { "type": "string", "format": "uri", "description": "Base URL of the inference API" },
         "dialect": {
           "type": "string",
-          "enum": [
-            "openai-chat",
-            "openai-responses",
-            "anthropic-messages",
-            "ollama",
-            "google-genai",
-            "bedrock-converse"
-          ],
-          "description": "Wire protocol expected by the endpoint"
+          "description": "Wire protocol: openai-chat, anthropic-messages or ollama (others by agreement)",
+          "minLength": 1
         },
-        "model": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Provider-specific model identifier"
-        },
+        "model": { "type": "string", "minLength": 1 },
         "auth": {
           "type": "object",
           "required": ["method"],
           "additionalProperties": false,
           "properties": {
-            "method": {
-              "type": "string",
-              "enum": [
-                "none",
-                "env",
-                "oidc-exchange",
-                "secret-store",
-                "portal-request"
-              ]
-            },
-            "locator": {
-              "type": "string",
-              "description": "Environment variable name, secret URI, or developer onboarding URL"
-            },
-            "issuer": {
-              "type": "string",
-              "format": "uri",
-              "description": "OIDC Issuer URL (required when method is 'oidc-exchange')"
-            },
-            "audience": {
-              "type": "string",
-              "description": "Target audience claim for OIDC token exchange"
-            },
-            "scopes": {
-              "type": "array",
-              "items": { "type": "string" }
-            },
-            "header": {
-              "type": "string",
-              "default": "Authorization"
-            },
-            "prefix": {
-              "type": "string",
-              "default": "Bearer "
+            "method": { "type": "string", "description": "none, env or portal-request (others via a client-registered handler)" },
+            "locator": { "type": "string", "description": "Env var name or onboarding URL" },
+            "header": { "type": "string", "default": "Authorization" },
+            "prefix": { "type": "string", "default": "Bearer " }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "method": { "enum": ["env", "portal-request"] } } },
+              "then": { "required": ["locator"] }
             }
-          }
+          ]
         },
-        "governance": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "data_classification": {
-              "type": "string",
-              "enum": ["public", "internal", "confidential", "restricted"],
-              "default": "public"
-            },
-            "zero_data_retention": {
-              "type": "boolean",
-              "default": false
-            },
-            "region": {
-              "type": "string"
-            }
-          }
-        },
-        "capabilities": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "context_window": { "type": "integer", "minimum": 1 },
-            "supports_tools": { "type": "boolean" },
-            "supports_vision": { "type": "boolean" },
-            "supports_structured_outputs": { "type": "boolean" }
-          }
+        "classification": {
+          "enum": ["public", "internal", "confidential", "restricted"],
+          "default": "public",
+          "description": "Most sensitive data this endpoint is cleared to receive"
         }
       }
     }
   }
 }
-

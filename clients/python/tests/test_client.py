@@ -8,185 +8,111 @@ from unittest.mock import patch
 from llmdap import LLMDAPClient, LLMDAPError
 from llmdap.cli import main as cli_main
 
+REPO = Path(__file__).resolve().parents[3]
 
-class TestLLMDAPClient(unittest.TestCase):
+
+def write_directory(path: Path, records: dict) -> str:
+    path.write_text(json.dumps({"llmdap_version": "0.1", "records": records}), encoding="utf-8")
+    return path.as_uri()
+
+
+class TestLookup(unittest.TestCase):
     def setUp(self):
-        self.tmpdir = tempfile.TemporaryDirectory()
-        self.base_path = Path(self.tmpdir.name)
-
-        self.local_dir_file = self.base_path / "local.json"
-        self.org_dir_file = self.base_path / "org.json"
-
-        self.local_dir_file.write_text(
-            json.dumps(
-                {
-                    "llmdap_version": "0.1",
-                    "directory": "local-workstation",
-                    "records": {
-                        "coding-fast": {
-                            "endpoint": "http://localhost:11434/v1",
-                            "dialect": "ollama",
-                            "model": "qwen3-coder:7b",
-                            "auth": {"method": "none"},
-                            "governance": {"data_classification": "restricted"},
-                        }
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        self.org_dir_file.write_text(
-            json.dumps(
-                {
-                    "llmdap_version": "0.1",
-                    "directory": "example.org",
-                    "records": {
-                        "coding-fast": {
-                            "endpoint": "https://api.openai.com/v1",
-                            "dialect": "openai-chat",
-                            "model": "gpt-4.1-mini",
-                            "auth": {"method": "env", "locator": "TEST_OPENAI_KEY"},
-                            "governance": {"data_classification": "public"},
-                        },
-                        "frontier-reasoning": {
-                            "endpoint": "https://api.anthropic.com/v1",
-                            "dialect": "anthropic-messages",
-                            "model": "claude-sonnet-4-6",
-                            "auth": {
-                                "method": "env",
-                                "locator": "TEST_ANTHROPIC_KEY",
-                                "header": "x-api-key",
-                                "prefix": "",
-                            },
-                            "governance": {"data_classification": "internal"},
-                        },
-                        "unprovisioned-service": {
-                            "endpoint": "https://api.vendor.example/v1",
-                            "dialect": "openai-chat",
-                            "model": "vendor-pro",
-                            "auth": {
-                                "method": "portal-request",
-                                "locator": "https://portal.example.org/ai/request",
-                            },
-                            "governance": {"data_classification": "internal"},
-                        },
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        self.client = LLMDAPClient(
-            [
-                self.local_dir_file.as_uri(),
-                self.org_dir_file.as_uri(),
-            ]
-        )
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.local = write_directory(base / "local.json", {
+            "coding": {"endpoint": "http://localhost:11434", "dialect": "ollama", "model": "qwen3:8b",
+                       "auth": {"method": "none"}, "classification": "restricted"},
+        })
+        self.org = write_directory(base / "org.json", {
+            "coding": {"endpoint": "https://api.openai.com/v1", "dialect": "openai-chat", "model": "gpt-4.1-mini",
+                       "auth": {"method": "env", "locator": "TEST_OPENAI_KEY"}},
+            "reasoning": {"endpoint": "https://api.anthropic.com/v1", "dialect": "anthropic-messages",
+                          "model": "claude-sonnet-4-6", "classification": "internal",
+                          "auth": {"method": "env", "locator": "TEST_ANTHROPIC_KEY",
+                                   "header": "x-api-key", "prefix": ""}},
+            "premium": {"endpoint": "https://api.vendor.example/v1", "dialect": "openai-chat", "model": "pro",
+                        "auth": {"method": "portal-request", "locator": "https://portal.example.org/ai"}},
+        })
+        self.missing = (base / "does-not-exist.json").as_uri()
+        self.client = LLMDAPClient([self.missing, self.local, self.org])
 
     def tearDown(self):
-        self.tmpdir.cleanup()
+        self.tmp.cleanup()
 
-    def test_hierarchical_resolution_prefers_first_directory(self):
-        resolved = self.client.lookup("coding-fast")
-        self.assertEqual(resolved.endpoint, "http://localhost:11434/v1")
-        self.assertEqual(resolved.dialect, "ollama")
-        self.assertIsNone(resolved.api_key)
+    def test_first_directory_wins_and_missing_files_are_skipped(self):
+        r = self.client.lookup("coding")
+        self.assertEqual((r.dialect, r.classification, r.api_key), ("ollama", "restricted", None))
 
-    @patch.dict(os.environ, {"TEST_ANTHROPIC_KEY": "sk-ant-test-123"})
-    def test_fallback_to_org_directory_and_custom_header(self):
-        resolved = self.client.lookup("frontier-reasoning")
-        self.assertEqual(resolved.endpoint, "https://api.anthropic.com/v1")
-        self.assertEqual(resolved.api_key, "sk-ant-test-123")
-        self.assertEqual(resolved.headers, {"x-api-key": "sk-ant-test-123"})
+    @patch.dict(os.environ, {"TEST_ANTHROPIC_KEY": "sk-ant-test"})
+    def test_env_credential_with_custom_header(self):
+        r = self.client.lookup("reasoning")
+        self.assertEqual(r.headers, {"x-api-key": "sk-ant-test"})
 
-    @patch.dict(os.environ, {"TEST_ANTHROPIC_KEY": "sk-ant-test-123"})
-    def test_governance_enforcement_blocks_insufficient_tier(self):
-        # 'frontier-reasoning' is 'internal'; requesting 'restricted' must fail
-        with self.assertRaises(LLMDAPError) as ctx:
-            self.client.lookup("frontier-reasoning", required_classification="restricted")
-        self.assertIn("Governance policy violation", str(ctx.exception))
+    def test_missing_env_var_is_reported(self):
+        with self.assertRaisesRegex(LLMDAPError, "TEST_OPENAI_KEY"):
+            LLMDAPClient([self.org]).lookup("coding")
 
-        # Requesting 'public' on an 'internal' endpoint succeeds (internal >= public)
-        resolved = self.client.lookup("frontier-reasoning", required_classification="public")
-        self.assertEqual(resolved.model, "claude-sonnet-4-6")
+    def test_classification_is_checked_before_credentials(self):
+        # 'reasoning' is internal; its env var is unset, so reaching auth would raise a different error.
+        with self.assertRaisesRegex(LLMDAPError, "only cleared for 'internal'"):
+            self.client.lookup("reasoning", required_classification="restricted")
 
-    def test_portal_request_raises_onboarding_url(self):
-        with self.assertRaises(LLMDAPError) as ctx:
-            self.client.lookup("unprovisioned-service")
-        self.assertIn("https://portal.example.org/ai/request", str(ctx.exception))
+    def test_unclassified_record_defaults_to_public(self):
+        with self.assertRaisesRegex(LLMDAPError, "only cleared for 'public'"):
+            LLMDAPClient([self.org]).lookup("coding", required_classification="internal")
 
-    def test_custom_auth_handler_registration(self):
-        self.org_dir_file.write_text(
-            json.dumps(
-                {
-                    "llmdap_version": "0.1",
-                    "records": {
-                        "vault-model": {
-                            "endpoint": "https://inference.internal/v1",
-                            "dialect": "openai-chat",
-                            "model": "llama-3.3-70b",
-                            "auth": {
-                                "method": "secret-store",
-                                "locator": "vault://ai/prod/llama",
-                            },
-                        }
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
+    def test_portal_request_points_to_onboarding(self):
+        with self.assertRaisesRegex(LLMDAPError, "https://portal.example.org/ai"):
+            self.client.lookup("premium")
 
-        fresh_client = LLMDAPClient([self.org_dir_file.as_uri()])
-        fresh_client.register_auth_handler(
-            "secret-store",
-            lambda cfg: f"minted-token-for-{cfg['locator']}",
-        )
-        resolved = fresh_client.lookup("vault-model")
-        self.assertEqual(
-            resolved.headers["Authorization"],
-            "Bearer minted-token-for-vault://ai/prod/llama",
-        )
+    def test_not_found(self):
+        with self.assertRaisesRegex(LLMDAPError, "not found"):
+            self.client.lookup("nope")
 
-    @patch.dict(
-        os.environ,
-        {
-            "LLMDAP_OVERRIDE_CODING_FAST": json.dumps(
-                {
-                    "endpoint": "http://10.0.0.99:8000/v1",
-                    "dialect": "openai-chat",
-                    "model": "override-model",
-                    "auth": {"method": "none"},
-                }
-            )
-        },
-    )
-    def test_process_env_override_takes_precedence(self):
-        resolved = self.client.lookup("coding-fast")
-        self.assertEqual(resolved.endpoint, "http://10.0.0.99:8000/v1")
-        self.assertEqual(resolved.model, "override-model")
+    def test_custom_auth_handler(self):
+        uri = write_directory(Path(self.tmp.name) / "vault.json", {
+            "vaulted": {"endpoint": "https://inference.internal/v1", "dialect": "openai-chat", "model": "m",
+                        "auth": {"method": "secret-store", "locator": "vault://ai/llama"}},
+        })
+        client = LLMDAPClient([uri])
+        client.register_auth_handler("secret-store", lambda cfg: "token-for-" + cfg["locator"])
+        self.assertEqual(client.lookup("vaulted").headers["Authorization"], "Bearer token-for-vault://ai/llama")
 
-    def test_cli_validate_and_lookup(self):
+    @patch.dict(os.environ, {"LLMDAP_OVERRIDE_CODING": json.dumps(
+        {"endpoint": "http://10.0.0.9:8000/v1", "dialect": "openai-chat", "model": "override",
+         "auth": {"method": "none"}})})
+    def test_env_override_takes_precedence(self):
+        self.assertEqual(self.client.lookup("coding").model, "override")
+
+    def test_home_shorthand_in_file_uri(self):
+        from llmdap.client import file_uri_to_path
+        self.assertEqual(file_uri_to_path("file:///~/x.json"), Path.home() / "x.json")
+
+    def test_plain_paths_work(self):
+        path = self.local[len("file://"):]
+        self.assertEqual(LLMDAPClient([path]).lookup("coding").dialect, "ollama")
+
+    def test_plain_http_directories_are_refused(self):
+        with self.assertRaisesRegex(LLMDAPError, "https"):
+            LLMDAPClient(["http://example.org/llmdap.json"]).lookup("coding")
+
+    def test_cli_lookup(self):
         with self.assertRaises(SystemExit) as cm:
-            cli_main(["validate", str(self.org_dir_file)])
+            cli_main(["lookup", "coding", "-d", self.local, "-c", "restricted", "--json"])
         self.assertEqual(cm.exception.code, 0)
 
-        with self.assertRaises(SystemExit) as cm:
-            cli_main(
-                [
-                    "lookup",
-                    "coding-fast",
-                    "-d",
-                    self.local_dir_file.as_uri(),
-                    "-c",
-                    "restricted",
-                    "-f",
-                    "json",
-                ]
-            )
-        self.assertEqual(cm.exception.code, 0)
+
+class TestExampleDirectory(unittest.TestCase):
+    def test_example_matches_schema(self):
+        try:
+            import jsonschema
+        except ImportError:
+            self.skipTest("pip install jsonschema to run")
+        schema = json.loads((REPO / "schema" / "llmdap-directory.schema.json").read_text())
+        doc = json.loads((REPO / "examples" / "directory.json").read_text())
+        jsonschema.Draft202012Validator(schema).validate(doc)
 
 
 if __name__ == "__main__":
     unittest.main()
-

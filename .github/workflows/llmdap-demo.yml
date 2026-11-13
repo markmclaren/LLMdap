@@ -1,4 +1,4 @@
-name: LLMDAP free-tier demo
+name: LLMDAP demo
 
 on:
   workflow_dispatch:
@@ -7,9 +7,6 @@ on:
         description: Prompt to send
         default: In one sentence, what problem does LDAP solve?
   push:
-    paths:
-      - "examples/free-tier/**"
-      - "clients/python/**"
 
 permissions:
   contents: read
@@ -19,38 +16,23 @@ jobs:
   demo:
     runs-on: ubuntu-latest
     env:
-      PYTHONPATH: clients/python/src
-      # Resolve over HTTPS from this very commit, as a client elsewhere would
-      DIRECTORY_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/examples/free-tier/directory.json
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Read the directory over HTTPS from this commit, as any other client would
+      DIRECTORY: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/examples/directory.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Unit tests
-        run: pip install -q pytest && pytest -q clients/python/tests
+      - name: Tests (includes schema check of examples/directory.json)
+        run: pip install -q pytest jsonschema && PYTHONPATH=clients/python/src pytest -q clients/python/tests
 
-      - name: Validate the directory
-        run: python -m llmdap.cli validate examples/free-tier/directory.json
+      - name: Call GitHub Models via the directory
+        run: python examples/demo.py -d "$DIRECTORY" -s chat-github "${{ inputs.prompt || 'In one sentence, what problem does LDAP solve?' }}"
 
-      - name: Resolve (no secrets printed)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m llmdap.cli lookup chat-github -d "$DIRECTORY_URL"
-
-      - name: Inference via GitHub Models
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Restricted data must be refused by a public endpoint
         run: |
-          python examples/free-tier/demo.py -d "$DIRECTORY_URL" -s chat-github \
-            "${{ github.event.inputs.prompt || 'In one sentence, what problem does LDAP solve?' }}"
-
-      - name: Governance refusal (restricted data must not reach a public endpoint)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if python examples/free-tier/demo.py -d "$DIRECTORY_URL" -s chat-github -c restricted "secret"; then
-            echo "::error::Expected a governance refusal"; exit 1
+          if python examples/demo.py -d "$DIRECTORY" -s chat-github -c restricted "secret"; then
+            echo "::error::Expected a refusal"; exit 1
           fi
-          echo "Refused as expected."

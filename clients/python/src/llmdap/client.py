@@ -1,151 +1,120 @@
+"""LLMDAP reference client: look up a logical service name, get back how to call it."""
 import json
 import os
-import time
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
-CLASSIFICATION_ORDER = {
-    "public": 0,
-    "internal": 1,
-    "confidential": 2,
-    "restricted": 3,
-}
+# Sensitivity tiers, lowest to highest. A record cleared for a tier may carry any lower tier.
+CLASSIFICATION_ORDER = {"public": 0, "internal": 1, "confidential": 2, "restricted": 3}
 
-
-def file_uri_to_path(uri: str) -> Path:
-    """Convert a file:// URI to a Path, honouring the README's file:///~/... form."""
-    raw = urllib.request.url2pathname(uri[len("file://"):])
-    if raw.startswith("/~"):
-        raw = raw[1:]  # "/~/.config/..." -> "~/.config/..." so expanduser() works
-    return Path(raw).expanduser()
+DEFAULT_DIRECTORY = "~/.config/llmdap/directory.json"
 
 
 class LLMDAPError(Exception):
-    """Raised when an LLMDAP lookup, governance policy, or credential exchange fails."""
+    """Lookup failed: name not found, policy refused, or credential unavailable."""
 
 
 @dataclass
 class ResolvedModel:
-    id: str
+    name: str
     endpoint: str
     dialect: str
     model: str
-    api_key: Optional[str]
-    headers: Dict[str, str]
-    governance: Dict[str, Any]
-    capabilities: Dict[str, Any]
+    classification: str
+    api_key: Optional[str] = None
+    headers: Dict[str, str] = field(default_factory=dict)
+
+
+def file_uri_to_path(uri: str) -> Path:
+    """file:// URI -> Path, accepting the file:///~/... shorthand for the home directory."""
+    raw = urllib.request.url2pathname(uri[len("file://"):])
+    if raw.startswith("/~"):
+        raw = raw[1:]
+    return Path(raw).expanduser()
+
+
+def load_directory(url: str) -> dict:
+    """Read a directory from https://, file://, or a plain file path."""
+    if url.startswith("http://"):
+        raise LLMDAPError("Remote directories must use https://")
+    if not url.startswith("https://"):
+        path = file_uri_to_path(url) if url.startswith("file://") else Path(url).expanduser()
+        return json.loads(path.read_text(encoding="utf-8"))
+    with urllib.request.urlopen(url, timeout=5) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
 class LLMDAPClient:
     def __init__(self, directory_urls: Optional[List[str]] = None):
-        if directory_urls is None:
-            default_local = Path.home() / ".config" / "llmdap" / "directory.json"
-            directory_urls = [default_local.as_uri()]
-        self.directory_urls = directory_urls
-        self._dir_cache: Dict[str, tuple[float, dict]] = {}
-        self._auth_handlers: Dict[str, Callable[[dict], Optional[str]]] = {
+        self.directory_urls = directory_urls or [DEFAULT_DIRECTORY]
+        # auth.method -> function(auth_cfg) returning a credential (or None)
+        self.auth_handlers: Dict[str, Callable[[dict], Optional[str]]] = {
             "none": lambda cfg: None,
-            "env": self._resolve_env,
-            "portal-request": self._resolve_portal,
+            "env": _auth_env,
+            "portal-request": _auth_portal,
         }
 
     def register_auth_handler(self, method: str, handler: Callable[[dict], Optional[str]]) -> None:
-        self._auth_handlers[method] = handler
+        """Plug in other credential sources (Vault, OIDC token exchange, ...)."""
+        self.auth_handlers[method] = handler
 
-    def _fetch_directory(self, url: str) -> dict:
-        now = time.time()
-        if url in self._dir_cache:
-            expires_at, data = self._dir_cache[url]
-            if now < expires_at:
-                return data
+    def find_record(self, name: str) -> dict:
+        override = os.getenv("LLMDAP_OVERRIDE_" + name.upper().replace("-", "_"))
+        if override:
+            return json.loads(override)
+        for url in self.directory_urls:
+            try:
+                records = load_directory(url).get("records", {})
+            except FileNotFoundError:
+                continue  # an optional local directory that doesn't exist
+            except Exception as exc:
+                raise LLMDAPError(f"Could not read directory {url}: {exc}") from exc
+            if name in records:
+                return records[name]
+        raise LLMDAPError(f"Service '{name}' not found in {self.directory_urls}")
 
-        if url.startswith("file://"):
-            path = file_uri_to_path(url)
-            data = json.loads(path.read_text(encoding="utf-8"))
-        else:
-            with urllib.request.urlopen(url, timeout=5) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+    def lookup(self, name: str, required_classification: Optional[str] = None) -> ResolvedModel:
+        record = self.find_record(name)
+        classification = record.get("classification", "public")
 
-        self._dir_cache[url] = (now + 300, data)
-        return data
+        # Policy is checked before any credential is fetched or connection made.
+        if required_classification:
+            # An unknown tier on the record counts as below everything, so it is refused.
+            if CLASSIFICATION_ORDER.get(classification, -1) < CLASSIFICATION_ORDER[required_classification]:
+                raise LLMDAPError(
+                    f"'{name}' is only cleared for '{classification}' data, "
+                    f"but '{required_classification}' was required."
+                )
 
-    def _resolve_env(self, auth_cfg: dict) -> str:
-        var_name = auth_cfg.get("locator", "")
-        val = os.getenv(var_name)
-        if not val:
-            raise LLMDAPError(f"Missing required environment variable: {var_name}")
-        return val
+        auth = record["auth"]
+        handler = self.auth_handlers.get(auth["method"])
+        if not handler:
+            raise LLMDAPError(f"No handler for auth method '{auth['method']}'")
+        secret = handler(auth)
 
-    def _resolve_portal(self, auth_cfg: dict) -> str:
-        raise LLMDAPError(
-            f"Access not provisioned locally. Request an API key at: {auth_cfg.get('locator')}"
-        )
-
-    def _check_governance(self, logical_name: str, gov: dict, required_classification: Optional[str]) -> None:
-        if not required_classification:
-            return
-        if required_classification not in CLASSIFICATION_ORDER:
-            raise LLMDAPError(f"Unknown required_classification: '{required_classification}'")
-
-        actual = gov.get("data_classification", "public")
-        if actual not in CLASSIFICATION_ORDER:
-            raise LLMDAPError(f"Record '{logical_name}' declares unknown classification: '{actual}'")
-
-        if CLASSIFICATION_ORDER[actual] < CLASSIFICATION_ORDER[required_classification]:
-            raise LLMDAPError(
-                f"Governance policy violation for '{logical_name}': "
-                f"requires '{required_classification}', endpoint is only cleared for '{actual}'."
-            )
-
-    def lookup(self, logical_name: str, required_classification: Optional[str] = None) -> ResolvedModel:
-        record = None
-
-        # 1. Check process environment override (JSON string)
-        env_override = os.getenv(f"LLMDAP_OVERRIDE_{logical_name.upper().replace('-', '_')}")
-        if env_override:
-            record = json.loads(env_override)
-        else:
-            # 2. Walk directory chain in order
-            for url in self.directory_urls:
-                try:
-                    directory = self._fetch_directory(url)
-                    records = directory.get("records", {})
-                    if logical_name in records:
-                        record = records[logical_name]
-                        break
-                except FileNotFoundError:
-                    continue
-                except Exception:
-                    continue
-
-        if not record:
-            raise LLMDAPError(f"Logical service '{logical_name}' not found in configured directories.")
-
-        gov = record.get("governance", {})
-        self._check_governance(logical_name, gov, required_classification)
-
-        auth_cfg = record["auth"]
-        method = auth_cfg["method"]
-        if method not in self._auth_handlers:
-            raise LLMDAPError(f"Unsupported auth method '{method}'. Register a handler first.")
-
-        secret = self._auth_handlers[method](auth_cfg)
-        headers: Dict[str, str] = {}
+        headers = {}
         if secret:
-            header_name = auth_cfg.get("header", "Authorization")
-            prefix = auth_cfg.get("prefix", "Bearer ")
-            headers[header_name] = f"{prefix}{secret}"
+            headers[auth.get("header", "Authorization")] = auth.get("prefix", "Bearer ") + secret
 
         return ResolvedModel(
-            id=logical_name,
+            name=name,
             endpoint=record["endpoint"],
             dialect=record["dialect"],
             model=record["model"],
+            classification=classification,
             api_key=secret,
             headers=headers,
-            governance=gov,
-            capabilities=record.get("capabilities", {}),
         )
 
+
+def _auth_env(auth: dict) -> str:
+    value = os.getenv(auth["locator"])
+    if not value:
+        raise LLMDAPError(f"Set the environment variable {auth['locator']}")
+    return value
+
+
+def _auth_portal(auth: dict) -> str:
+    raise LLMDAPError(f"You don't have access yet. Request it at: {auth['locator']}")
