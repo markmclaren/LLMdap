@@ -26,8 +26,8 @@ services:
       - /bin/sh
       - -c
       - |
-        export LLMDAP_OVERRIDE_CHAT_LOCAL="$$(python3 -c 'import json,os; print(json.dumps({"endpoint":os.environ["DMR_URL"],"dialect":"openai-chat","model":os.environ["DMR_MODEL"],"auth":{"method":"none"},"governance":{"data_classification":"restricted","zero_data_retention":true,"region":"on-prem"}}))')"
-        exec python3 examples/free-tier/demo.py -s chat-local "$$@"
+        export LLMDAP_OVERRIDE_CHAT_DMR="$$(python3 -c 'import json,os; print(json.dumps({"endpoint":os.environ["DMR_URL"],"dialect":"openai-chat","model":os.environ["DMR_MODEL"],"auth":{"method":"none"},"governance":{"data_classification":"restricted","zero_data_retention":true,"region":"on-prem"}}))')"
+        exec python3 examples/free-tier/demo.py -s chat-dmr "$$@"
       - --
     command: ["In one sentence, what problem does LDAP solve?"]
 

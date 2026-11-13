@@ -24,7 +24,7 @@ sys.path.insert(0, str(HERE.parents[1] / "clients" / "python" / "src"))  # use r
 
 from llmdap import LLMDAPClient, LLMDAPError, ResolvedModel  # noqa: E402
 
-DEFAULT_PREFERENCE = ["chat-local", "chat-github", "chat-gemini", "chat-groq", "reasoning-premium"]
+DEFAULT_PREFERENCE = ["chat-local", "chat-dmr", "chat-github", "chat-gemini", "chat-groq", "reasoning-premium"]
 
 
 def _post(url: str, body: dict, headers: dict, timeout: int = 60) -> dict:
@@ -64,11 +64,16 @@ def chat(target: ResolvedModel, prompt: str) -> str:
 
 
 def reachable(target: ResolvedModel) -> bool:
-    """Cheap pre-flight for local endpoints so --auto skips a stopped Ollama quickly."""
-    if target.dialect != "ollama":
+    """Cheap pre-flight for local endpoints so auto-selection skips stopped runtimes quickly."""
+    base = target.endpoint.rstrip("/")
+    if target.dialect == "ollama":
+        probe = f"{base}/api/tags"
+    elif target.endpoint.startswith("http://"):
+        probe = f"{base}/models"
+    else:
         return True
     try:
-        urllib.request.urlopen(f"{target.endpoint.rstrip('/')}/api/tags", timeout=2).close()
+        urllib.request.urlopen(probe, timeout=2).close()
         return True
     except Exception:
         return False

@@ -8,6 +8,7 @@ data path: `demo.py` calls the provider directly after resolving.
 | Record | Backend | Cost | Credential (`auth.method: env`) | Cleared for |
 |---|---|---|---|---|
 | `chat-local` | Ollama on your machine | free, offline | none | `restricted` |
+| `chat-dmr` | Docker Model Runner (`ai/smollm2`) | free, offline | none | `restricted` |
 | `chat-github` | GitHub Models | free with any GitHub account | `GITHUB_TOKEN` (PAT with `models:read`, or the Actions token) | `public` |
 | `chat-gemini` | Google AI Studio (OpenAI-compatible endpoint) | free tier | `GEMINI_API_KEY` from aistudio.google.com/apikey | `public` |
 | `chat-groq` | Groq | free tier | `GROQ_API_KEY` from console.groq.com | `public` |

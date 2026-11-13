@@ -15,6 +15,19 @@
       },
       "capabilities": { "context_window": 131072 }
     },
+    "chat-dmr": {
+      "ttl": 300,
+      "endpoint": "http://localhost:12434/engines/llama.cpp/v1",
+      "dialect": "openai-chat",
+      "model": "ai/smollm2",
+      "auth": { "method": "none" },
+      "governance": {
+        "data_classification": "restricted",
+        "zero_data_retention": true,
+        "region": "on-prem"
+      },
+      "capabilities": { "context_window": 8192 }
+    },
     "chat-github": {
       "ttl": 3600,
       "endpoint": "https://models.github.ai/inference",
