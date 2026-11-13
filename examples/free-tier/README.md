@@ -51,6 +51,14 @@ docker compose run --rm demo "Explain LDAP in one sentence"
 docker compose run --rm demo -s chat-gemini "Hello"
 ```
 
+Or run a fully self-contained local Ollama runtime using the `local` profile
+(defaults to Microsoft's `phi:2.7b`, ~1.6 GB; override with `OLLAMA_MODEL=smollm2:135m`
+for an even smaller ~270 MB model):
+
+```bash
+docker compose --profile local run --rm demo-local
+```
+
 ## Things to try
 
 **Swap a model without touching code.** Put a personal override in
